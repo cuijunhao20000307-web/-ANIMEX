@@ -1,0 +1,97 @@
+name: Build and Publish ANIMEX
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Makefile"
+      - "nxanime_source/**"
+      - "icon.jpg"
+      - "ANIMEX.nacp"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Switch dependencies
+        shell: bash
+        run: |
+          dkp-pacman -Syu --noconfirm
+          dkp-pacman -S --needed --noconfirm \
+            switch-curl switch-freetype switch-libpng switch-libwebp \
+            switch-sdl2 switch-ffmpeg switch-mbedtls
+
+      - name: Read version
+        shell: bash
+        run: |
+          version="$(sed -n 's/^APP_VERSION[[:space:]]*:=[[:space:]]*//p' Makefile | head -n1 | tr -d '[:space:]')"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_ENV"
+          echo "REPO=ANIMEX" >> "$GITHUB_ENV"
+
+      - name: Build NRO
+        shell: bash
+        run: make -j2
+
+      - name: Package release asset
+        shell: bash
+        run: |
+          mkdir -p release/switch/ANIMEX
+          cp ANIMEX.nro release/switch/ANIMEX/ANIMEX.nro
+          cp icon.jpg release/switch/ANIMEX/icon.jpg
+          cd release
+          zip -r "../${REPO}-pre.zip" switch
+
+      - name: Publish to this repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ env.version }}
+          RELEASE_FILE: ${{ env.REPO }}-pre.zip
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --prerelease
+            gh release upload "$RELEASE_TAG" "$RELEASE_FILE" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$RELEASE_FILE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TAG" \
+              --prerelease \
+              --notes ""
+          fi
+
+      - name: Publish to Magic-Suite
+        if: ${{ secrets.TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN }}
+          RELEASE_TAG: ${{ env.version }}
+          RELEASE_FILE: ${{ env.REPO }}-pre.zip
+          TARGET_REPOSITORY: we1zard/magic-suite
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$TARGET_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --repo "$TARGET_REPOSITORY" \
+              --prerelease
+            gh release upload "$RELEASE_TAG" "$RELEASE_FILE" \
+              --repo "$TARGET_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$RELEASE_TAG" "$RELEASE_FILE" \
+              --repo "$TARGET_REPOSITORY" \
+              --target master \
+              --title "$RELEASE_TAG" \
+              --prerelease \
+              --notes ""
+          fi
