@@ -1,0 +1,6 @@
+build/
+*.elf
+*.map
+*.nro
+*.zip
+.DS_Store
