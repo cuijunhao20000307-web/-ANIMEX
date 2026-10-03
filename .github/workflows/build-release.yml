@@ -41,7 +41,7 @@ jobs:
 
       - name: Build NRO
         shell: bash
-        run: make -j2
+        run: make -j$(nproc)
 
       - name: Package release asset
         shell: bash
@@ -71,27 +71,12 @@ jobs:
               --notes ""
           fi
 
-      - name: Publish to Magic-Suite
-        if: ${{ secrets.TOKEN != '' }}
+      - name: 'Trigger nxStore update'
         env:
-          GH_TOKEN: ${{ secrets.TOKEN }}
-          RELEASE_TAG: ${{ env.version }}
-          RELEASE_FILE: ${{ env.REPO }}-pre.zip
-          TARGET_REPOSITORY: we1zard/magic-suite
-        shell: bash
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: |
-          if gh release view "$RELEASE_TAG" --repo "$TARGET_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" \
-              --repo "$TARGET_REPOSITORY" \
-              --prerelease
-            gh release upload "$RELEASE_TAG" "$RELEASE_FILE" \
-              --repo "$TARGET_REPOSITORY" \
-              --clobber
-          else
-            gh release create "$RELEASE_TAG" "$RELEASE_FILE" \
-              --repo "$TARGET_REPOSITORY" \
-              --target master \
-              --title "$RELEASE_TAG" \
-              --prerelease \
-              --notes ""
-          fi
+          curl -f -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/WE1ZARD/nxStore/actions/workflows/publish.yml/dispatches" \
+            -d '{"ref":"master"}'
